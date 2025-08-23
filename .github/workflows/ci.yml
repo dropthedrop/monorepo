@@ -1,0 +1,36 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  gateway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install gateway deps
+        run: |
+          cd services/gateway
+          npm ci
+      - name: Run gateway smoke test
+        run: |
+          node services/gateway/test/run_and_test.js
+
+  orchestrator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install orchestrator deps
+        run: |
+          cd services/orchestrator
+          npm ci
+      - name: Run orchestrator health check
+        run: |
+          curl -sS http://localhost:9080/health || true

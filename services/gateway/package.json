@@ -12,7 +12,8 @@
     "fastify": "^4.22.0",
     "@fastify/cors": "^8.2.0",
   "prom-client": "^14.0.1",
-  "node-fetch": "^2.6.7"
+  "node-fetch": "^2.6.7",
+  "ethers": "^5.7.2"
   },
   "devDependencies": {
   "ts-node": "^10.9.1",

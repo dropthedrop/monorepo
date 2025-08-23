@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import client from 'prom-client';
 import fs from 'fs';
 import path from 'path';
+import { ethers } from 'ethers';
 
 // Simple in-memory auth/queue stubs for the next development slice
 const authVerifyMs = new client.Histogram({ name: 'auth_verify_ms', help: 'auth verification latency ms', buckets: [1,5,10,20,50,100] });
@@ -37,11 +38,25 @@ async function authVerify(req: FastifyRequest): Promise<boolean> {
     if (!dpop || !usage) {
       return false;
     }
-    // Accept a deterministic test token for now: 'TEST-USE'
+    // If the usage header looks like a simple EIP-191 signature form: "0x{signature}|0x{address}"
+    if (typeof usage === 'string' && usage.includes('|')) {
+      const [sig, addr] = usage.split('|');
+      try {
+        // verify signature over a static message for now (placeholder)
+        const msg = `usage:${(req.body && JSON.stringify(req.body)) || ''}`;
+        const recovered = ethers.utils.verifyMessage(msg, sig);
+        if (recovered && addr && recovered.toLowerCase() === addr.toLowerCase()) {
+          return true;
+        }
+      } catch (e) {
+        // fallthrough to other checks
+      }
+    }
+    // Accept deterministic test token for dev convenience
     if (typeof usage === 'string' && usage === 'TEST-USE') {
       return true;
     }
-    // Incomplete: real implementation must parse CWT/CBOR and verify EIP-712 capability
+    // Incomplete: full production implementation must parse CWT/CBOR and verify EIP-712 capability
     return false;
   } finally {
     authVerifyMs.observe(Date.now() - start);
