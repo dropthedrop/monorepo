@@ -1,0 +1,55 @@
+{
+  "snapshot_date": "2025-08-22T00:00:00Z",
+  "note": "Workspace memory snapshot for continuing next time",
+  "last_actions": [
+    "Created initial monorepo scaffold (README, LICENSE, Makefile)",
+    "Added infra/compose/docker-compose.yaml and infra/compose/addresses.json",
+    "Scaffolded services/gateway (TypeScript + Fastify) with endpoints and Dockerfile",
+    "Fixed TypeScript setup (tsconfig.json, @types/node), added local types for node-fetch",
+    "Added smoke test scripts and a launcher that starts the gateway and runs quote/lock/execute checks",
+    "Verified gateway endpoints via test/launch_and_test.js — quote/lock/execute responded as expected"
+  ],
+  "last_terminal_commands": [
+    "npm --prefix \"C:\\Users\\ALEKO\\projects\\Cryptop-gent\\services\\gateway\" run start",
+    "node services/gateway/test/launch_and_test.js"
+  ],
+  "server_status": {
+    "gateway": "Verified locally during smoke test (listening at http://127.0.0.1:8080 during test)"
+  },
+  "files_changed": [
+    "README.md",
+    "LICENSE",
+    "Makefile",
+    "scripts/demo.sh",
+    "infra/compose/docker-compose.yaml",
+    "infra/compose/addresses.json",
+    "docs/API.md",
+    "docs/OPERATIONS.md",
+    "services/gateway/package.json",
+    "services/gateway/tsconfig.json",
+    "services/gateway/src/index.ts",
+    "services/gateway/Dockerfile",
+    "services/gateway/test/launch_and_test.js",
+    "services/gateway/test/run_and_test.js",
+    "services/gateway/test/smoke.js",
+    "services/gateway/types/node-fetch.d.ts",
+    ".gitignore"
+  ],
+  "pending_tasks": [
+    "Implement DPoP and Usage-Auth parsing in gateway",
+    "Add auth_verify_ms and receipt_lag_ms Prometheus metrics",
+    "Create Windows PowerShell demo script (scripts/demo.ps1) or note to run the bash demo in WSL/Git Bash",
+    "Scaffold other services (tariff, oracle-agg, orchestrator) and add to docker-compose",
+    "Add Foundry contracts stubs under contracts/ and deploy script placeholder",
+    "Add CI pipeline skeleton (.github/workflows) and Helm/terraform stubs in infra/"
+  ],
+  "how_to_resume": [
+    "# Start the gateway service in a terminal:\ncd services/gateway; npm run start",
+    "# Or run the launcher that starts gateway, runs tests, then kills it:\nnode services/gateway/test/launch_and_test.js",
+    "# Run the pure-JS smoke test against a running gateway:\nnode services/gateway/test/run_and_test.js",
+    "# To bring up full compose (scaffold):\nmake up"
+  ],
+  "recommended_next": "Implement gateway auth stubs (DPoP + Usage-Auth), add Prometheus metrics, and add scripts/demo.ps1",
+  "author": "automated-snapshot",
+  "notes": "No real keys or secrets were added. Many Doc E items remain TODO; this memory file captures the exact state and commands to continue." 
+}

@@ -1,0 +1,458 @@
+# Doc E — Copilot Build Guide & Master Instruction
+
+Version v0.1 (22 Aug 2025)
+
+---
+
+## 1. Purpose
+
+Give an AI coding agent (e.g. GitHub Copilot/Claude/Code Llama) a precise, copy‑pasteable brief to generate the repository, code, tests, infra, and docs for the system specified in Docs A–D. This is the canonical build plan.
+
+**Context anchors**
+• Architecture and requirements: Doc A
+• Interfaces and schemas: Doc B
+• Project plan and chain choice: Doc C
+• Local→Cloud deployment: Doc D
+
+---
+
+## 2. Stack & standards (must‑follow)
+
+Languages
+• Contracts: Solidity (Foundry)
+• Backend: TypeScript (Node 20, Fastify), minimal Go for high‑perf modules optional
+• SDKs: TypeScript and Python
+• Oracle aggregator: TypeScript (Nest/Fastify) with BLS threshold lib
+• Infra: Docker, Docker Compose, Terraform (AWS), Helm, Kustomize
+
+Security baselines
+• mTLS at edges, TLS exporter bound to DPoP‑style proofs
+• Chain‑anchored capabilities (EIP‑712) and revocation
+• No long‑lived static API keys
+• Secrets via env + AWS Secrets Manager locally via `.env.local` only for dev
+
+Performance budgets
+• Gateway overhead ≤ 100 ms p95 (50 ms target)
+• Provider auth verification ≤ 5 ms p95 (local cache ≤ 5 s)
+• Settlement finality ≤ 2 minutes p95
+
+Observability
+• OpenTelemetry traces and metrics; JobID spans end‑to‑end
+• Prometheus metrics: `auth_verify_ms`, `receipt_lag_ms`, `queue_depth`, `gateway_rps`
+
+---
+
+## 3. Monorepo layout
+
+```
+repo/
+  contracts/            # Foundry
+  services/
+    gateway/            # Fast path proxy + metering + cap issuance
+    orchestrator/       # Planner + budget mgr + policy engine + auditor
+    oracle-agg/         # Aggregators, BLS t-of-n
+    tariff/             # Tariff service + signer
+    billing/            # Invoice generator
+  sdks/
+    ts/
+    py/
+  infra/
+    compose/            # docker-compose.yaml, seeds, local anvil
+    helm/               # charts per service
+    terraform/          # modules for VPC, EKS, RDS, Redis, KMS, WAF
+  docs/
+    README.md
+    OPERATIONS.md
+    RUNBOOKS.md
+    API.md
+  .github/workflows/
+```
+
+---
+
+## 4. Contracts to generate (see Doc B for ABIs)
+
+Packages
+• CreditToken, CreditVault, ProviderRegistry, UsageReceipts, SettlementTreasury
+• ParamGovernor (timelocked), CapabilityAuthority, SessionChannels
+
+Tests
+• Unit tests for edge cases
+• Invariants: conservation, non‑overlap, payout bounds
+• Gas snapshots and fuzzing
+• Deploy scripts for Base Sepolia
+
+Outputs
+• ABIs in `contracts/out/abi`
+• Addresses written to `infra/compose/addresses.json`
+
+---
+
+## 5. Gateway service (Fastify, TypeScript)
+
+Responsibilities
+• Reverse proxy to providers with metering
+• Capability issuance and revocation push
+• Enforced budgets and policies per job
+• Emit signed UsageEvents; accept oracle receipts for linking
+
+Endpoints
+• `POST /v1/jobs/quote`
+• `POST /v1/jobs/lock`
+• `POST /v1/execute`
+• `POST /v1/usage/emit` (provider optional)
+• `POST /v1/oracle/receipt`
+
+Security
+• Enrolled gateways keypair (mTLS)
+• `Usage‑Auth` compact CWT, EIP‑712 backing
+• DPoP header binding method+path+nonce to TLS exporter
+
+---
+
+## 6. Oracle aggregator
+
+• Validate provider signatures, compute Merkle roots, BLS threshold‑sign batches
+• Submit to `UsageReceipts.submit()`
+• Buffer during chain/RPC failures; expose lag metrics
+• Admin tool to rotate aggregator set
+
+---
+
+## 7. SDKs
+
+TypeScript and Python
+• `quote(plan)`, `lock(job, credits)`, `run(plan)` with streaming, `settlement(job)`
+• Adapters for LangChain, LangGraph, LlamaIndex
+• Examples for chat + embed flows and budget caps
+
+---
+
+## 8. Orchestrator (agentic)
+
+Components
+• Planner → picks tools by tariff
+• Budget Manager → locks/renews credits and caps spend
+• Policy Engine → evaluates compliance rules
+• Safety → PII redaction and output checks
+• Auditor → immutable trail linking job to receipts/tx
+
+---
+
+## 9. Billing & invoices
+
+• Map job → receipts → settlement tx hashes
+• Export to CSV/JSON and Xero/NetSuite templates
+• Sign invoices; attach tariff hash and versions
+
+---
+
+## 10. Local dev (Compose)
+
+Bring up
+`docker compose up` starts Postgres, Redis, Gateway, Orchestrator, Oracle‑sim, Tariff, Billing, OpenTelemetry, Jaeger, Prometheus, Grafana, and Anvil with auto‑deploy.
+Seeds
+Tenants, tariffs, providers, example jobs, test vectors from Doc B.
+Make targets
+`make up`, `make reset`, `make e2e`, `make load`
+
+---
+
+## 11. CI/CD
+
+GitHub Actions
+• Lint, unit tests
+• Foundry tests (unit, fuzz, invariant)
+• Build images with SBOMs; sign with Cosign
+• Compose e2e on PR
+• Staging deploy via Helm; prod gated by checks
+
+---
+
+## 12. Acceptance tests (must pass)
+
+1 End‑to‑end demo
+Tenant funds credits, runs multi‑step job, receives invoice with tx links; contract events match invoice exactly.
+2 Fault tolerance
+Kill an aggregator replica; receipts still settle within SLO.
+3 Security
+Replay attack attempt fails due to DPoP/TLS binding; revoked capability blocks within ≤ 5 s.
+4 Performance
+Gateway ≤ 100 ms p95; provider auth verify ≤ 5 ms p95.
+
+---
+
+## 13. Delivery checklist
+
+• Green CI
+• Compose up works from clean clone
+• Base Sepolia deploys; addresses committed
+• Docs and runbooks complete
+• Dashboards present metrics listed above
+
+---
+
+## 14. Single‑Paste MASTER INSTRUCTION for the AI coding agent
+
+**Copy everything in this section into your AI coding agent.**
+
+"""
+You are generating a production‑grade monorepo implementing Docs A–D of the Tokenised API Calls for AI system. Follow these directives exactly:
+
+1. REPO & LICENSE
+
+* Create repository `tokenised-api-credits` (monorepo). Use MIT license and a top‑level README that links to Docs A–E.
+
+2. CONTRACTS (Foundry)
+
+* Implement: CreditToken, CreditVault, ProviderRegistry, UsageReceipts, SettlementTreasury, ParamGovernor, CapabilityAuthority, SessionChannels.
+* Add unit tests, fuzz, and invariants for: conservation of credits; non‑overlapping batch windows; payout bounds; capability revocation.
+* Provide deploy scripts for Base Sepolia and write deployed addresses to `infra/compose/addresses.json`.
+
+3. SERVICES (TypeScript)
+
+* `services/gateway`: Fastify reverse proxy with metering, capability issuance (EIP‑712), DPoP verifier, and endpoints `/v1/jobs/quote`, `/v1/jobs/lock`, `/v1/execute`, `/v1/usage/emit`, `/v1/oracle/receipt`.
+* `services/orchestrator`: planner + budget manager + policy engine + auditor; uses SDK to call gateway.
+* `services/oracle-agg`: aggregates UsageEvents, computes Merkle root, performs BLS threshold signing, submits to `UsageReceipts.submit()`.
+* `services/tariff`: versioned tariff, signs quotes; publishes tariff hash.
+* `services/billing`: generates signed invoices mapping job→receipts→settlement tx.
+* Implement OpenTelemetry tracing and the metrics: `auth_verify_ms`, `receipt_lag_ms`, `queue_depth`, `gateway_rps`.
+
+4. SDKS
+
+* TypeScript and Python packages exposing `quote`, `lock`, `run`, and settlement helpers; include LangChain/LangGraph adapters.
+
+5. SECURITY
+
+* mTLS at edges with short‑lived certs.
+* `Usage-Auth` compact token (CBOR) backed by EIP‑712 capability; include DPoP‑style header bound to TLS exporter.
+* Enrolled gateways list and revocation push channel; provider‑side lightweight verifier library.
+
+6. INFRA
+
+* `infra/compose`: docker‑compose.yaml for local parity (Postgres, Redis, Gateway, Orchestrator, Oracle‑sim, Tariff, Billing, OTel, Jaeger, Prometheus, Grafana, Anvil + deployer).
+* `infra/helm`: charts for each service with values for dev/staging/prod.
+* `infra/terraform`: modules to create VPC, EKS, RDS, Redis, KMS, WAF, ALB, IRSA, Route 53. Provide variables and outputs only; no secrets.
+
+7. CI/CD
+
+* GitHub Actions: lint/test; Foundry tests; build+sign images; Compose e2e; Helm render; staging deploy on main; prod gated by manual approval + SLO health.
+
+8. SEEDS & TEST VECTORS
+
+* Load the test vectors from Doc B (8.1–8.3). Provide golden JSON files and scripts to replay.
+
+9. DOCUMENTATION
+
+* `docs/API.md` describing Gateway API and SDK examples.
+* `docs/OPERATIONS.md` for SRE with runbooks (RPC failover, oracle rotation, revocation storm, key compromise, error spike).
+
+10. MAKE TARGETS
+
+* `make up`, `make reset`, `make test`, `make e2e`, `make load`.
+
+11. ACCEPTANCE
+
+* Provide a `scripts/demo.sh` that: funds credits (mock), locks a job, runs a two‑step plan (chat+embed), prints an invoice with links to tx hashes.
+* Ensure performance budgets are met in synthetic tests.
+
+12. OUTPUT
+
+* Return a tree of files, key code snippets, and commands to run: `docker compose up`, then `scripts/demo.sh`.
+
+Assumptions: base chain is **Base** (OP Stack); use Base Sepolia for dev/staging. Do not embed real keys or secrets. Keep modules independent and well‑typed. If a spec detail is unclear, implement the simplest choice that satisfies the interfaces in Doc B and note TODOs in code.
+"""
+
+---
+
+## 15. How to use Doc E
+
+1 Open your coding agent and paste the **Single‑Paste MASTER INSTRUCTION** section.
+2 Wait for the agent to produce the monorepo scaffold and code.
+3 Run `docker compose up` then `scripts/demo.sh`.
+4 Verify acceptance tests and metrics; iterate on any TODOs the agent lists.
+
+---
+
+## 16. Future extensions (optional for Copilot)
+
+• ZK usage proofs for privacy‑sensitive endpoints
+• TEE attestation at provider edge
+• Own rollup migration scripts per Doc C §8
+• Additional SDKs (Go, Java)
+
+---
+
+## 21. Token Options — Using Our Own Token for API Calls
+
+**Question** Can our own crypto token be used as the unit for API calls?
+**Answer** Yes. We support three designs; we recommend the dual‑token approach for enterprise stability.
+
+### Option A (Recommended): Dual‑Token
+
+• **APIC (CreditToken)** non‑transferable API credits used for metering and settlement; stable, 1:1 priced to a reference unit (USD‑equivalent).
+• **APX (Protocol Token)** transferable utility token for staking, rebates, and refills. Tenants may **pay with APX**, which is converted to APIC at a fair price.
+
+**Why** Stable spend unit for enterprises while still capturing protocol value in APX. Reduced volatility, simpler invoices and revenue recognition.
+
+**Flow**
+1 Tenant deposits APX (or stablecoins).
+2 `TreasuryRouter` prices APX via TWAP + oracle and mints APIC to the tenant vault.
+3 Jobs consume APIC; protocol fees optionally buy‑and‑burn APX.
+
+**Pricing safeguards**
+`price_used = clamp(TWAP(chain_dex, 30m), floor, cap) × (1 − haircut_bps)`
+`credits_minted = (deposit_value / credit_unit_price)`
+• Circuit‑breaker if deviation to spot > deviation\_bps.
+• Per‑block mint cap; emergency pause in `ParamGovernor`.
+
+**Incentives**
+• APX staking for oracle operators (slashable).
+• Fee rebates up to X% based on staked APX tiers.
+• Protocol fee split uses Y% for periodic APX buy‑and‑burn.
+
+### Option B: Single Spend Token (APX as the spend unit)
+
+Tariffs are quoted directly in APX. **Pros** strong native demand. **Cons** enterprise volatility; complex accounting. If chosen, use moving‑average pricing and budget buffers; invoices show APX and USD equivalents.
+
+### Option C: Stablecoin‑only Spend + APX Utility
+
+Spend unit remains stablecoin‑backed APIC; APX used only for staking, rebates, governance. Simplest for compliance.
+
+**Compliance**
+Consult counsel before treating APX as a prepayment instrument. APIC (non‑transferable credit) generally maps to services and is easier for revenue recognition.
+
+**Contract additions** see Doc B (TreasuryRouter, RebateModule, FeeSplitter, Paymaster4337).
+
+---
+
+## 11. Addendum — Own Token Support (APX)
+
+### New contracts
+
+1 **APXToken (ERC‑20)** protocol token (transferable).
+2 **TreasuryRouter** accepts APX or stablecoins, applies oracle pricing (TWAP + Chainlink), haircut/caps, and mints APIC credits into `CreditVault`.
+3 **RebateModule** computes fee rebates based on staked APX tiers.
+4 **FeeSplitter** distributes protocol fees; optional APX buy‑and‑burn.
+5 **Paymaster4337 (optional)** sponsors gas for tenants with sufficient vault balance.
+
+### Interfaces (Solidity snippets)
+
+```solidity
+interface ITreasuryRouter {
+  event MintedCredits(address indexed payer, bytes32 indexed tenantId, uint256 depositValue, uint256 creditsMinted);
+  function mintWithAPX(uint256 amount, bytes calldata priceProof) external;
+  function mintWithStable(uint256 amount) external;
+}
+
+interface IRebateModule {
+  function rebateBps(address tenant) external view returns (uint16);
+}
+
+interface IFeeSplitter {
+  function split(uint256 amount) external returns (uint256 toProviders, uint256 toOracles, uint256 toReserve, uint256 toProtocol);
+}
+```
+
+### Oracle pricing
+
+* Use Uniswap v3 TWAP (30 min) + Chainlink price feed as sanity check.
+* `haircut_bps` and `max_deviation_bps` governed via `ParamGovernor`.
+* Circuit breaker pauses APX mints on abnormal deviation.
+
+### Tests and invariants
+
+* Price clamp respected; no over‑mint beyond deposit value.
+* Rebate application bounded by `max_rebate_bps`.
+* Buy‑and‑burn does not starve reserves and providers.
+* Paymaster only sponsors gas if vault ≥ expected spend cap.
+
+---
+
+## 18. Token Economics & Use of Own Token (APX)
+
+### Objectives
+
+1 Keep enterprise spend predictable (APIC credits) while enabling APX utility and upside.
+2 Align security (oracle staking) and growth (fee rebates, buy‑and‑burn).
+
+### Initial parameters (pilot)
+
+* Credit unit price: USD 0.00004 per LLM token equivalent (example; see tariff).
+* Fee split: provider 92%, oracles 2%, reserve 3%, protocol 3%.
+* Rebate tiers:
+  • Tier 0 < 5k APX → 0 bps
+  • Tier 1 ≥ 5k APX → 50 bps
+  • Tier 2 ≥ 25k APX → 100 bps
+  • Max rebate cap 150 bps
+* APX pricing: Uniswap v3 30‑min TWAP with Chainlink sanity; haircut 50 bps; max deviation 200 bps.
+
+### Treasury policy
+
+* Reserves target 3–6 months of provider payouts.
+* Periodic APX buy‑and‑burn uses a portion of protocol fees (e.g., 50% of protocol share) subject to budget.
+* APX staking secures oracle sets; slashed to RiskReserve on fraud.
+
+### Accounting
+
+* APIC credits recognised as deferred revenue when sold, recognised on consumption.
+* APX flows treated as marketing/Rebate expense or treasury operations, not revenue.
+
+### Migration impact
+
+* Token contracts deploy on Base for pilot; addresses stored in ChainRegistry to support future rollup migration without code changes.
+* TreasuryRouter supports multiple price adapters to switch oracle sources.
+
+---
+
+## 18. Token Track (APX) — Plan Addendum
+
+### Scope additions
+
+* Implement APXToken, TreasuryRouter, RebateModule, FeeSplitter, optional Paymaster4337.
+* Update tariffs and invoices to support APX → APIC conversions and rebate lines.
+
+### Milestone inserts
+
+* Phase 1 (MVP)
+  • Implement TreasuryRouter with TWAP oracle and price clamps.
+  • Basic APX → APIC mint; unit tests and fuzzing.
+* Phase 2 (Hardening)
+  • RebateModule + FeeSplitter with governance params.
+  • Staking skeleton for oracle operators using APX.
+* Phase 3 (Pilot)
+  • Optional Paymaster4337 to sponsor gas.
+  • Buy‑and‑burn job in Billing on protocol epoch close.
+
+### Compliance notes
+
+* Review APX positioning as utility vs. payment instrument; avoid implying stable value.
+* Keep APIC non‑transferable to track service credits cleanly.
+* Provide dual‑currency invoices (credits and USD equivalent); APX shown only as a funding method.
+
+---
+
+## 17. Copilot Addendum — Enable Our Own Token (APX)
+
+Append these to the MASTER INSTRUCTION before running:
+
+1. CONTRACTS
+
+* Create `APXToken` (ERC‑20), `TreasuryRouter`, `RebateModule`, `FeeSplitter`, optional `Paymaster4337`.
+* Wire `TreasuryRouter` to `CreditToken`/`CreditVault` to mint APIC using APX or stablecoins.
+* Include price adapters: Uniswap v3 30‑min TWAP + Chainlink sanity check; implement `haircut_bps`, `max_deviation_bps`, circuit breaker.
+
+2. SERVICES
+
+* Extend Billing to show APX → APIC conversions and rebate line items.
+* Add endpoint `POST /v1/treasury/mint` to call `TreasuryRouter` in dev (mocked); in prod, front this via a simple UI/CLI.
+
+3. TESTS
+
+* Fuzz APX price edge cases; verify no over‑mint.
+* Rebate caps enforced; buy‑and‑burn respects reserve floor.
+
+4. DOCS
+
+* Update README with APX usage and risk notes.
+* Document governance params for token economics.
