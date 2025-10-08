@@ -3,21 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-  "start": "ts-node src/index.ts",
-  "build": "tsc -p tsconfig.json",
-  "start:prod": "node dist/index.js",
-  "smoke": "ts-node test/run_and_test.ts"
+    "start": "ts-node src/index.ts",
+    "smoke-local": "node scripts/smoke_test.js",
+    "build": "tsc -p tsconfig.json",
+    "start:prod": "node dist/index.js",
+    "smoke": "ts-node test/run_and_test.ts",
+    "test": "ts-node test/auth.test.js && ts-node test/auth_metrics.test.ts"
   },
   "dependencies": {
-    "fastify": "^4.22.0",
     "@fastify/cors": "^8.2.0",
-  "prom-client": "^14.0.1",
-  "node-fetch": "^2.6.7",
-  "ethers": "^5.7.2"
+    "cbor": "^8.0.0",
+    "ethers": "^5.7.2",
+    "fastify": "^4.22.0",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.0",
+    "prom-client": "^14.0.1"
   },
   "devDependencies": {
-  "ts-node": "^10.9.1",
-  "typescript": "^5.1.6",
-  "@types/node": "^20.0.0"
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.1.6"
   }
 }

@@ -38,6 +38,28 @@ services:
       - postgres
       - redis
 
+  oracle-sim:
+    image: node:20-alpine
+    command: ["sh", "-c", "sleep 3600"]
+
+  tariff:
+    build: ../../services/tariff
+    image: tokenised/tariff:dev
+    ports:
+      - "9090:9090"
+
+  billing:
+    build: ../../services/billing
+    image: tokenised/billing:dev
+    ports:
+      - "9091:9091"
+
+  ganache:
+    image: trufflesuite/ganache-cli:latest
+    command: ["--host", "0.0.0.0", "--port", "8545", "--accounts", "10"]
+    ports:
+      - "8545:8545"
+
 volumes:
   db_data:
     

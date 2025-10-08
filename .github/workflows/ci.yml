@@ -5,6 +5,11 @@ on: [push, pull_request]
 jobs:
   gateway:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node
@@ -14,10 +19,11 @@ jobs:
       - name: Install gateway deps
         run: |
           cd services/gateway
-          npm ci
+          npm install
       - name: Run gateway smoke test
         run: |
-          node services/gateway/test/run_and_test.js
+          cd services/gateway
+          npx ts-node test/run_and_test.ts
 
   orchestrator:
     runs-on: ubuntu-latest
@@ -30,7 +36,7 @@ jobs:
       - name: Install orchestrator deps
         run: |
           cd services/orchestrator
-          npm ci
+          npm install
       - name: Run orchestrator health check
         run: |
           curl -sS http://localhost:9080/health || true

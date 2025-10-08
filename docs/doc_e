@@ -456,3 +456,181 @@ Append these to the MASTER INSTRUCTION before running:
 
 * Update README with APX usage and risk notes.
 * Document governance params for token economics.
+
+---
+
+## 18. APX Token Launch & Cloud Rollout Playbook (Optional Track)
+
+**Goal** Launch our own token alongside the cloud rollout, without blocking the core product. Supports both **no‑ICO** (bootstrapped) and **sale‑based** funding.
+
+### 18.1 Naming & ticker checklist (pre‑TGE)
+
+1 shortlist 3–5 names and 3‑letter tickers
+2 check availability on major token lists, explorers, and app stores
+3 basic trademark search in target markets AUS, US, EU
+4 secure domain, ENS, and social handles
+5 record the chosen name and ticker in `ChainRegistry`
+
+### 18.2 Pre‑TGE engineering
+
+1 Deploy `APXToken` (ERC‑20) on **Base**; set `decimals=18`.
+2 Deploy `TreasuryRouter`, `RebateModule`, `FeeSplitter`; wire to `CreditToken`/`CreditVault`.
+3 Stand up **Claim Portal** (Merkle distributor) and **VestingVault** for team/investors.
+4 Publish `Tokenomics.md`: supply, allocations, cliffs/vesting, rebates.
+5 Configure price adapters: Uniswap v3 30‑min TWAP + Chainlink sanity; set haircut/deviation caps.
+
+### 18.3 Liquidity & price discovery (DEX first)
+
+1 Create Uniswap v3 pool APX/USDC on **Base**; choose fee tier (usually 0.3%).
+2 Seed initial liquidity (small, transparent); set a narrow starting range; enable circuit‑breaker bot.
+3 Verify contract source and publish addresses; add to token lists.
+
+### 18.4 Launch day (TGE)
+
+1 Enable **Claim Portal** for any allowlist/airdrop; open vesting view.
+2 Add/adjust liquidity; announce tariff hash and `TreasuryRouter` address.
+3 Monitor anti‑bot rules, price deviation, and router health; keep SLO dashboards visible.
+
+### 18.5 Sale options (pick one with counsel)
+
+**A. No‑ICO (recommended for speed)**
+
+* No sale; small treasury seed; rebates funded from protocol fees.
+* Pro: simple compliance and lower cost.
+
+**B. Private SAFT / strategic round**
+
+* Accredited investors; KYC/AML; strong docs; tokens locked with cliffs/vesting.
+* Pro: cleaner regulatory posture; Con: smaller community at start.
+
+**C. Public token sale (higher complexity)**
+
+* Requires offering docs, KYC/AML, geo‑controls; consult counsel before execution.
+* Use a capped, time‑boxed sale; enforce per‑wallet limits; route proceeds via multisig.
+
+### 18.6 Cloud resources for token launch
+
+* Same EKS cluster; add `claim-portal` web, `price‑watcher` worker, and `liquidity‑bot` (optional).
+* Secrets stored in AWS KMS/Secrets Manager; multisig keys held in hardware wallets.
+
+### 18.7 Minimal‑cost path (indicative)
+
+* Legal light‑touch review: USD 10–30k (jurisdiction dependent).
+* Audit focus (Router + Distributor): USD 20–60k.
+* Liquidity seed: USD 25–100k (tunable).
+* Infra delta: ≈ USD 300–800/mo over core stack.
+
+### 18.8 Gates & rollback
+
+* Ship core product first; token launch proceeds only after:
+  a SLOs green in staging
+  b Audit clean for treasury‑touching contracts
+  c Incident drills passed
+* Rollback: pause Router mints; freeze claim portal; keep credits (APIC) fully operational.
+
+---
+
+## 18. Token Launch & Funding Tracks (Addendum)
+
+**Purpose** Add fundraising options to support cloud scaling without blocking product launch.
+
+### 18.1 Tracks
+
+**Track A — Bootstrapped (no ICO)**
+
+* Ship product; seed small liquidity; enable rebates later.
+* Budget focus: audits + minimal liquidity; target run‑rate < USD 15k/mo at pilot.
+
+**Track B — Private SAFT/strategic**
+
+* Raise from accredited investors; tokens vest 12–36 months with cliffs.
+* Use proceeds for audits, liquidity, provider incentives, and SRE staffing.
+
+**Track C — Public token sale (only with counsel)**
+
+* Requires KYC/AML vendor, geo‑fencing, disclosures, and per‑wallet caps.
+* Add a dedicated workstream: Sale backend, allowlist, Merkle proofs, treasury ops.
+
+### 18.2 Timeline inserts
+
+* Phase 1: Draft Tokenomics; implement Router + Distributor + Vesting; internal review.
+* Phase 2: External audit for treasury contracts; dry‑run claim portal; DEX pool on Base (tiny).
+* Phase 3: If greenlit, TGE (Track A or B); optional public sale only after counsel sign‑off.
+
+### 18.3 Budget ranges (indicative)
+
+* Legal/regulatory: USD 10–50k (light to moderate).
+* Audits (treasury components): USD 20–120k by scope.
+* Liquidity seed: USD 25–150k.
+* Core cloud (pilot): USD 8–15k/mo.
+* Minimum viable launch: feasible under \~USD 100–250k excluding team.
+
+### 18.4 Compliance guardrails
+
+* Avoid “investment” language in public materials unless conducting a registered offering.
+* Keep APIC credits as non‑transferable service units for clear revenue recognition.
+* Maintain KYC/AML where payouts or public sales exist; document sanctions screening.
+
+---
+
+## 19. Funding & Token Launch Plan (Addendum)
+
+**Goal** Provide options to finance cloud scale with or without a token sale.
+
+### Options
+
+* **Bootstrapped**: No sale; focus on product revenue; small liquidity provision; rebates later.
+* **Private SAFT**: Strategic investors with vesting; proceeds for audits, liquidity, and SRE.
+* **Public Sale (caution)**: Only after legal sign‑off; KYC/AML and geo‑controls.
+
+### Work items
+
+* Tokenomics doc; TreasuryRouter/Distributor/Vesting contracts; Claim Portal; Uniswap v3 pool on Base; multisig treasury.
+* Counsel engagement; KYC/AML vendor (if public sale); documentation kit.
+
+### Timeline gates
+
+* Product SLOs green in staging
+* Treasury components audited
+* Incident drills passed
+* Governance parameters finalised
+
+### Naming & ticker process
+
+* Shortlist 3–5 names/tickers; check marketplaces and trademarks; reserve domains/handles; record selection in ChainRegistry.
+
+### Budget snapshot (pilot)
+
+* Minimum viable launch feasible without a “huge” budget: \~USD 100–250k excluding team, or less if bootstrapped without sale.
+
+> This section adds to §6 Milestones and §14 Budget to include token launch contingencies.
+
+---
+
+## 11.1 Token Launch Artifacts (Addendum for Copilot)
+
+Append to MASTER INSTRUCTION when launching APX:
+
+1. Contracts
+
+* `MerkleDistributor` for claims/airdrops; `VestingVault` with cliffs and linear release; `APXToken` already defined; scripts to deploy on Base.
+* Unit + fuzz tests for distributor/vesting edge cases.
+
+2. Claim Portal (Next.js)
+
+* Connect wallet, show claimable, vesting schedule, and TX history; uses OpenTelemetry.
+* Admin tool to publish new Merkle roots.
+
+3. Liquidity scripts
+
+* Uniswap v3 pool create/seed scripts; range config; price‑watcher with circuit breaker.
+* CI job to verify pool and publish addresses.
+
+4. Treasury ops
+
+* Multisig (Safe) config; payment runbooks; buy‑and‑burn task if enabled.
+* Router price‑adapter integration tests with TWAP + Chainlink sanity.
+
+5. Docs
+
+* `docs/Tokenomics.md` and `docs/Launch-Checklist.md` generated with placeholders to fill.

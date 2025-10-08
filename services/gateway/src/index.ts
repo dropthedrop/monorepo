@@ -4,59 +4,88 @@ import client from 'prom-client';
 import fs from 'fs';
 import path from 'path';
 import { ethers } from 'ethers';
+import jwt from 'jsonwebtoken';
+import { Queue } from './queue';
+import { verifyDpopHeader } from './auth';
 
 // Simple in-memory auth/queue stubs for the next development slice
 const authVerifyMs = new client.Histogram({ name: 'auth_verify_ms', help: 'auth verification latency ms', buckets: [1,5,10,20,50,100] });
 const receiptLagMs = new client.Histogram({ name: 'receipt_lag_ms', help: 'receipt processing lag ms', buckets: [1,10,50,100,500,1000] });
 const queueDepth = new client.Gauge({ name: 'queue_depth', help: 'in-memory queue depth' });
 
-// simple in-memory FIFO queue to simulate receipt processing and lag
-const receiptQueue: Array<{ id: string; enqueuedAt: number; payload: any }> = [];
+// Redis-backed queue with Map fallback
+const redisUrl = process.env.REDIS_URL || undefined;
+const receiptQueue = new Queue<{ id: string; enqueuedAt: number; payload: any }>('gateway:receipt', redisUrl);
 let processing = false;
 
 async function processQueue() {
   if (processing) return;
   processing = true;
-  while (receiptQueue.length > 0) {
-    queueDepth.set(receiptQueue.length);
-    const item = receiptQueue.shift()!;
-    // simulate processing delay
-    await new Promise((r) => setTimeout(r, 50));
-    const lag = Date.now() - item.enqueuedAt;
-    receiptLagMs.observe(lag);
+  try {
+    while (true) {
+      const size = await receiptQueue.size();
+      if ((size || 0) <= 0) break;
+      queueDepth.set(size || 0);
+      const item = await receiptQueue.pop();
+      if (!item) break;
+      // simulate processing delay
+      await new Promise((r) => setTimeout(r, 50));
+      const lag = Date.now() - item.enqueuedAt;
+      receiptLagMs.observe(lag);
+    }
+  } finally {
+    queueDepth.set(0);
+    processing = false;
   }
-  queueDepth.set(0);
-  processing = false;
+}
+
+// Use a standard JWT library for signing/verifying HS256 tokens in dev.
+const GATEWAY_SECRET = process.env.GATEWAY_SECRET || 'dev-gateway-secret-change-me';
+
+function signUsageToken(payload: Record<string, any>) {
+  // jwt.sign will set exp if provided in payload as seconds or we can pass expiresIn
+  // normalize: allow payload.exp as ms since epoch -> convert to seconds if present
+  const opts: any = { algorithm: 'HS256' };
+  let p = { ...payload };
+  if (p.exp && p.exp > 9999999999) {
+    // probably ms -> convert to seconds
+    p.exp = Math.floor(p.exp / 1000);
+  }
+  return jwt.sign(p, GATEWAY_SECRET, opts);
+}
+
+function verifyUsageToken(token: string): { ok: boolean; payload?: any } {
+  try {
+    const decoded = jwt.verify(token, GATEWAY_SECRET) as any;
+    return { ok: true, payload: decoded };
+  } catch (e) {
+    return { ok: false };
+  }
 }
 
 async function authVerify(req: FastifyRequest): Promise<boolean> {
   const start = Date.now();
   try {
-    // Minimal stub: require headers 'dpop' and 'usage-auth'
     const dpop = (req.headers as any)['dpop'];
-    const usage = (req.headers as any)['usage-auth'];
-    if (!dpop || !usage) {
-      return false;
+    const usage = (req.headers as any)['usage-auth'] || (req.headers as any)['usage_auth'] || (req.headers as any)['usage-auth-token'];
+
+    if (typeof usage === 'string') {
+      const res = verifyUsageToken(usage);
+      // In dev we allow valid usage tokens to be sufficient. In production
+      // you should require DPoP and verify client keys.
+      if (res.ok) return true;
     }
-    // If the usage header looks like a simple EIP-191 signature form: "0x{signature}|0x{address}"
-    if (typeof usage === 'string' && usage.includes('|')) {
-      const [sig, addr] = usage.split('|');
+
+    // Fallback: if DPoP is present and verifyDpopHeader returns true, allow it
+    if (dpop && typeof dpop === 'string') {
       try {
-        // verify signature over a static message for now (placeholder)
-        const msg = `usage:${(req.body && JSON.stringify(req.body)) || ''}`;
-        const recovered = ethers.utils.verifyMessage(msg, sig);
-        if (recovered && addr && recovered.toLowerCase() === addr.toLowerCase()) {
-          return true;
-        }
+        const ok = await verifyDpopHeader(req as FastifyRequest, String(dpop));
+        return !!ok;
       } catch (e) {
-        // fallthrough to other checks
+        return false;
       }
     }
-    // Accept deterministic test token for dev convenience
-    if (typeof usage === 'string' && usage === 'TEST-USE') {
-      return true;
-    }
-    // Incomplete: full production implementation must parse CWT/CBOR and verify EIP-712 capability
+
     return false;
   } finally {
     authVerifyMs.observe(Date.now() - start);
@@ -81,13 +110,65 @@ export function buildServer(): FastifyInstance {
 
   server.post('/v1/jobs/lock', async (req, reply) => {
     gatewayRps.inc();
+    // Debug: log incoming headers and body to diagnose dev auth flows
+    try {
+      server.log.debug({ headers: req.headers, body: req.body }, 'incoming lock request headers/body');
+    } catch (e) {
+      // ignore
+    }
+    // Diagnostic checks: run usage-token verification and dpop verification separately to log results
+    const headersAny: any = req.headers as any;
+    let usageHeader = headersAny['usage-auth'] || headersAny['usage_auth'] || headersAny['usage-auth-token'] || headersAny['usage-auth-token'] || headersAny['usageauth'] || headersAny['usage'];
+    let dpopHeader = headersAny['dpop'] || headersAny['DPoP'] || headersAny['DPOP'];
+
+    let usageOk = false;
+    let dpopOk = false;
+    try {
+      if (typeof usageHeader === 'string') {
+        const r = verifyUsageToken(String(usageHeader));
+        usageOk = !!(r && r.ok);
+        // Avoid logging full token payloads in any environment; only lightly log in dev
+        if (process.env.NODE_ENV !== 'production') {
+          server.log.debug({ usageOk, usage_job_id: r && r.payload ? r.payload.job_id : undefined }, 'usage token diagnostic');
+        }
+      }
+    } catch (e) {
+      if (process.env.NODE_ENV !== 'production') server.log.debug({ err: String(e) }, 'usage token diagnostic error');
+    }
+
+    try {
+      if (typeof dpopHeader === 'string') {
+        dpopOk = !!(await verifyDpopHeader(req as FastifyRequest, String(dpopHeader)));
+        if (process.env.NODE_ENV !== 'production') server.log.debug({ dpopOk }, 'dpop diagnostic');
+      }
+    } catch (e) {
+      if (process.env.NODE_ENV !== 'production') server.log.debug({ err: String(e) }, 'dpop diagnostic error');
+    }
+
     const ok = await authVerify(req as FastifyRequest);
     if (!ok) {
+      // Provide minimal info in logs; only debug-rich in development
+      if (process.env.NODE_ENV !== 'production') {
+        server.log.debug({ ok, usageOk, dpopOk }, 'auth verification failed summary');
+      } else {
+        server.log.info('auth verification failed for /v1/jobs/lock');
+      }
       return reply.status(401).send({ error: 'missing or invalid auth' });
     }
     const body: any = req.body as any;
-    reply.header('X-Lock-Handle', `lock-${body.job_id || 'unknown'}`);
-    return reply.status(204).send();
+    const jobId = body.job_id || `job-${Math.random().toString(36).slice(2,9)}`;
+    reply.header('X-Lock-Handle', `lock-${jobId}`);
+    // Provide a development usage auth token to the client so frontend can call /v1/execute
+    const expiresMs = Date.now() + 3600000; // 1 hour
+    const usageAuthPayload = {
+      job_id: jobId,
+      locked_budget_apic: body.budget_apic || 0,
+      endpoints: body.endpoints || [],
+      exp: expiresMs, // expire in 1 hour (ms)
+    };
+    const usageAuthToken = signUsageToken(usageAuthPayload);
+    const expiresIso = new Date(expiresMs).toISOString();
+    return reply.status(200).send({ job_id: jobId, locked_budget_apic: usageAuthPayload.locked_budget_apic, usage_auth_token: usageAuthToken, expires_at: expiresIso });
   });
 
   server.post('/v1/execute', async (req, reply) => {
@@ -100,8 +181,9 @@ export function buildServer(): FastifyInstance {
     gatewayRps.inc();
     const body: any = req.body as any;
     const id = body.id || `rx-${Math.random().toString(36).slice(2,9)}`;
-    receiptQueue.push({ id, enqueuedAt: Date.now(), payload: body });
-    queueDepth.set(receiptQueue.length);
+  await receiptQueue.push({ id, enqueuedAt: Date.now(), payload: body });
+  const s = await receiptQueue.size();
+  queueDepth.set(s);
     // kick the processor but don't await
     processQueue().catch(() => {});
     return { ok: true, id };
@@ -111,8 +193,9 @@ export function buildServer(): FastifyInstance {
     gatewayRps.inc();
     const body: any = req.body as any;
     const id = body.id || `rc-${Math.random().toString(36).slice(2,9)}`;
-    receiptQueue.push({ id, enqueuedAt: Date.now(), payload: body });
-    queueDepth.set(receiptQueue.length);
+  await receiptQueue.push({ id, enqueuedAt: Date.now(), payload: body });
+  const s2 = await receiptQueue.size();
+  queueDepth.set(s2);
     processQueue().catch(() => {});
     return { ok: true, id };
   });
