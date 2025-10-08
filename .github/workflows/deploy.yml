@@ -28,7 +28,7 @@ jobs:
       - name: Test Contracts
         run: |
           cd contracts
-          forge install --no-commit
+          forge install
           forge test
 
   deploy:
