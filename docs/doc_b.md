@@ -361,3 +361,5 @@ Tariff hash: `keccak256(canonical_cbor(tariff))` pinned in ParamGovernor.
 * Contracts: semver with upgrade gates via timelock.
 * Gateway API: `/v{major}` path; additive changes only in minor.
 * SDKs: semver; deprecations with compile-time warnings.
+
+
