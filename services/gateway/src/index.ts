@@ -212,7 +212,7 @@ export async function startServer() {
   const server = buildServer();
   const port = Number(process.env.PORT || 8080);
   try {
-    await server.listen({ port, host: '127.0.0.1' });
+    await server.listen({ port, host: '0.0.0.0' });
     // write a small file to indicate the server is up (useful for tests)
     try {
       const marker = path.join(__dirname, '..', 'server.started');
